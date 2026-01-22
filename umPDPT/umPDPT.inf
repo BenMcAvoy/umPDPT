@@ -1,0 +1,62 @@
+;
+; umPDPT.inf
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System ; TODO: specify appropriate Class
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318} ; TODO: specify appropriate ClassGuid
+Provider    = %ManufacturerName%
+CatalogFile = umPDPT.cat
+DriverVer   = ; TODO: set DriverVer in stampinf property pages
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+umPDPT.sys = 1,,
+
+;*****************************************
+; Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName% = Standard,NT$ARCH$.10.0...16299 ; %13% support introduced in build 16299
+
+[Standard.NT$ARCH$.10.0...16299]
+%umPDPT.DeviceDesc% = umPDPT_Device, Root\umPDPT ; TODO: edit hw-id
+
+[umPDPT_Device.NT]
+CopyFiles = File_Copy
+
+[File_Copy]
+umPDPT.sys
+
+;-------------- Service installation
+[umPDPT_Device.NT.Services]
+AddService = umPDPT,%SPSVCINST_ASSOCSERVICE%, umPDPT_Service_Inst
+
+; -------------- umPDPT driver install sections
+[umPDPT_Service_Inst]
+DisplayName    = %umPDPT.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %13%\umPDPT.sys
+
+[umPDPT_Device.NT.Wdf]
+KmdfService = umPDPT, umPDPT_wdfsect
+
+[umPDPT_wdfsect]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE = 0x00000002
+ManufacturerName = "<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+DiskName = "umPDPT Installation Disk"
+umPDPT.DeviceDesc = "umPDPT Device"
+umPDPT.SVCDESC = "umPDPT Service"
