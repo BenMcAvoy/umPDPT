@@ -1,41 +1,55 @@
 #pragma once
 
-#include <ntddk.h>
+#include <ntifs.h>
+#include <stdarg.h>
+#include <ntstrsafe.h>
 
-#define LOG_LEVEL_NONE  0
-#define LOG_LEVEL_ERROR 1
-#define LOG_LEVEL_WARN  2
-#define LOG_LEVEL_INFO  3
-#define LOG_LEVEL_DEBUG 4
+namespace umPDPTDriver {
+    enum class LogLevel : UINT8 {
+        Trace,
+        Info,
+        Warn,
+        Error,
+        Fatal
+    };
 
-// FINDME: Log level
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+    // Even seq = writing
+	// Odd seq = committed
+    // Readers must:
+    //  - Read seq (acquire)
+    //  - Copy entry
+    //  - Read seq again
+	//  - Accept only if seq is unchanged and odd (committed)
+    struct LogEntry {
+        volatile LONG seq;
+        UINT64 timestamp;
+        UINT32 pid;
+        UINT32 tid;
+        LogLevel level;
+        UINT16 length;
+        CHAR message[256];
+    };
 
-#define LOG_PRINT(levelStr, fmt, ...) \
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "[umPDPT][%s] %s:%d: " fmt "\n", \
-        levelStr, __FUNCTION__, __LINE__, __VA_ARGS__)
+    // ring
+    struct LogBuffer {
+        volatile LONG writeIndex;
+        UINT32 capacity;
+        LogEntry entries[1]; // flexible array member
+    };
 
-#if LOG_LEVEL >= LOG_LEVEL_ERROR
-#define LOG_ERROR(fmt, ...) LOG_PRINT("ERROR", fmt, __VA_ARGS__)
-#else
-#define LOG_ERROR(fmt, ...) (void)0
-#endif
+	_IRQL_requires_max_(DISPATCH_LEVEL)
+    NTSTATUS LogInit(size_t capacity = 4096);
+	_IRQL_requires_max_(DISPATCH_LEVEL)
+    void LogShutdown();
+	_IRQL_requires_max_(DISPATCH_LEVEL)
+    void LogWrite(LogLevel level, const char* fmt, ...);
 
-#if LOG_LEVEL >= LOG_LEVEL_WARN
-#define LOG_WARN(fmt, ...) LOG_PRINT("WARN", fmt, __VA_ARGS__)
-#else
-#define LOG_WARN(fmt, ...) (void)0
-#endif
+	LogBuffer** GetLogBuffer();
+	PMDL* GetLogMdl();
+    PVOID* GetLogMdlMapping();
 
-#if LOG_LEVEL >= LOG_LEVEL_INFO
-#define LOG_INFO(fmt, ...) LOG_PRINT("INFO", fmt, __VA_ARGS__)
-#else
-#define LOG_INFO(fmt, ...) (void)0
-#endif
-
-#if LOG_LEVEL >= LOG_LEVEL_DEBUG
-#define LOG_DEBUG(fmt, ...) LOG_PRINT("DEBUG", fmt, __VA_ARGS__)
-#else
-#define LOG_DEBUG(fmt, ...) (void)0
-#endif
-
+#define LOG_TRACE(fmt, ...) ::umPDPTDriver::LogWrite(::umPDPTDriver::LogLevel::Trace, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) ::umPDPTDriver::LogWrite(::umPDPTDriver::LogLevel::Error, fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) ::umPDPTDriver::LogWrite(::umPDPTDriver::LogLevel::Info, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) ::umPDPTDriver::LogWrite(::umPDPTDriver::LogLevel::Warn, fmt, ##__VA_ARGS__)
+} // namespace umPDPTDriver

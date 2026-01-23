@@ -4,7 +4,9 @@ int main() {
 	auto& driver = umPDPTClient::Driver::GetInstance();
 	driver.Connect();
 
-	// TODO: Add further client logic here
+	driver.Map();
+
+	std::this_thread::sleep_for(std::chrono::minutes(10));
 
 	return 0;
 }

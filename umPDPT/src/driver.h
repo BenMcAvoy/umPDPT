@@ -10,12 +10,20 @@
 namespace umPDPTDriver {
 	// Constants
 	constexpr ULONG CONNCODE = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_SPECIAL_ACCESS); // attach
+	constexpr ULONG MAPCODE = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
 	// Data
 	static PEPROCESS CurrentProcess = nullptr;
 
+	struct MapInfo {
+		void* base;       // required
+		UINT32 capacity;  // optional
+		UINT32 entrySize; // optional
+	};
+
 	struct Info_t {
-		_In_ DWORD ClientProcessId;
+		_In_  DWORD ClientProcessId;
+		_Out_ MapInfo MapInfo;
 	};
 
 	// Entry
@@ -28,6 +36,7 @@ namespace umPDPTDriver {
 
 	// Code handlers
 	NTSTATUS HandleIOCodeConnect(Info_t* buffer);
+	NTSTATUS HandleIOCodeMap(Info_t* buffer);
 
 	// Helpers
 	NTSTATUS SaveStringToRegistry(
@@ -35,4 +44,6 @@ namespace umPDPTDriver {
 		_In_ PCWSTR valueName,
 		_In_ PCWSTR data
 	);
+
+	PVOID GetPML4Base();
 } // namespace umPDPTDriver

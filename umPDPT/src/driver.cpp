@@ -18,7 +18,7 @@ NTSTATUS umPDPTDriver::MainEntryPoint(PDRIVER_OBJECT pDriver, PUNICODE_STRING re
 		return status;
 	}
 
-	LOG_DEBUG("Device created successfully");
+	LOG_TRACE("Device created successfully");
 
 	WCHAR symLinkBuf[64];
 	swprintf(symLinkBuf, L"\\DosDevices\\Global\\umPDPTLink_%llu", count);
@@ -44,14 +44,14 @@ NTSTATUS umPDPTDriver::MainEntryPoint(PDRIVER_OBJECT pDriver, PUNICODE_STRING re
 		return status;
 	}
 
-	LOG_DEBUG("Symbolic link created successfully");
+	LOG_TRACE("Symbolic link created successfully");
 	pDriver->MajorFunction[IRP_MJ_CREATE] = umPDPTDriver::HandleIOCreateClose;
 	pDriver->MajorFunction[IRP_MJ_CLOSE] = umPDPTDriver::HandleIOCreateClose;
 	pDriver->MajorFunction[IRP_MJ_DEVICE_CONTROL] = umPDPTDriver::HandleIORequest;
 
 	ClearFlag(pDev->Flags, DO_DEVICE_INITIALIZING);
 
-	LOG_DEBUG("Driver entry point completed successfully");
+	LOG_TRACE("Driver entry point completed successfully");
 
 	return STATUS_SUCCESS;
 }
@@ -82,6 +82,9 @@ NTSTATUS umPDPTDriver::HandleIORequest(PDEVICE_OBJECT pDev, PIRP irp) {
 	case CONNCODE:
 		status = HandleIOCodeConnect(buffer);
 		break;
+	case MAPCODE:
+		status = HandleIOCodeMap(buffer);
+		break;
 	default:
 		status = HandleIOUnsupported(pDev, irp);
 		return status;
@@ -107,6 +110,52 @@ NTSTATUS umPDPTDriver::HandleIOCodeConnect(Info_t* buffer) {
 	}
 
 	LOG_INFO("Client process handle obtained successfully @ 0x%p", CurrentProcess);
+
+	KAPC_STATE apcState;
+	KeStackAttachProcess(CurrentProcess, &apcState);
+
+	auto logBuffer = *GetLogBuffer();
+	auto logMdl = *GetLogMdl();
+	auto logMdlMapping = GetLogMdlMapping();
+
+	PVOID userVA = MmMapLockedPagesSpecifyCache(
+		logMdl,
+		UserMode,
+		MmNonCached,
+		nullptr,
+		FALSE,
+		NormalPagePriority
+	);
+
+	KeUnstackDetachProcess(&apcState);
+
+	DbgPrint(
+		"umPDPT: Log buffer mapped to user mode at address 0x%p\n",
+		userVA
+	);
+
+	if (!userVA) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	*logMdlMapping = userVA;
+
+	// Fill log map info
+	buffer->MapInfo.base = userVA;
+	buffer->MapInfo.capacity = logBuffer->capacity;
+	buffer->MapInfo.entrySize = sizeof(LogEntry);
+
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS umPDPTDriver::HandleIOCodeMap(Info_t* buffer) {
+	UNREFERENCED_PARAMETER(buffer);
+
+	PVOID base = GetPML4Base();
+	buffer->MapInfo.base = base;
+	LOG_TRACE("Provided PML4 base to client: 0x%p", base);
+
+	// TODO: real behavior
 
 	return STATUS_SUCCESS;
 }
@@ -187,6 +236,22 @@ NTSTATUS umPDPTDriver::SaveStringToRegistry(
 		return status;
 	}
 
-	LOG_DEBUG("String saved to registry successfully");
+	LOG_TRACE("String saved to registry successfully");
 	return STATUS_SUCCESS;
+}
+
+PVOID umPDPTDriver::GetPML4Base() {
+	if (!CurrentProcess) {
+		LOG_ERROR("CurrentProcess is null");
+		return nullptr;
+	}
+
+	// Offset 0x28 in EPROCESS is the DirectoryTableBase (PML4) https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_KPROCESS
+	// NOTE: Win11 24H2 and Win10 22H2 have the same offset. As of Jan 2026, this seems stable enough to hardcode.
+
+	constexpr SIZE_T offset_DirectoryTableBase = 0x28;
+	PVOID pml4Base = *reinterpret_cast<PVOID*>(reinterpret_cast<UINT8*>(CurrentProcess) + offset_DirectoryTableBase);
+	LOG_TRACE("PML4 Base obtained: 0x%p", pml4Base);
+
+	return pml4Base;
 }
